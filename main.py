@@ -129,17 +129,18 @@ class Drone(py.sprite.Sprite):
     def reset(self):
         self.RESET = True
 
-    def quad_collision_check(self, collision_sprites):
+    def quad_collision_check(self, n, collision_sprites):
+        """use n equidistant points between the previous position and new position"""
         start = self.pre_collision_position.copy()
         stop = self.position.copy()
         dir = start.angle_to(stop)
         mag = start.distance_to(stop)
-        quad_step = mag / 10
+        quad_step = mag / n
         unit_vector = vector(0,1)
         unit_vector.rotate_ip(dir)
         quad_step_vector = unit_vector * quad_step
         new_pos = self.pre_collision_position.copy()
-        for i in range(10):
+        for i in range(n):
             new_pos = new_pos + quad_step_vector
             collided_sprites = py.sprite.spritecollide(self, collision_sprites, False)
             wall_collision_fudge = 1
@@ -213,7 +214,7 @@ class Drone(py.sprite.Sprite):
         self.angle += -Roll
         self.angle = self.angle % 360
 
-        self.position = self.quad_collision_check(collision_sprites)
+        self.position = self.quad_collision_check(10, collision_sprites)
 
         if not self.STOPPED:
             self.acceleration -= self.velocity * self.F_FRICTION
