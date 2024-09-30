@@ -16,3 +16,5 @@ pyinstaller
 either run main.py as a standalone python file
 or run the launcher to download the latest built release from github releases
 or build yourself by running build.bat / running 'pyinstaller 2DLOS.spec'
+
+![Alt text](src/Assets/screenshot.JPG?raw=true "screenshot")
