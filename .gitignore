@@ -1,3 +1,4 @@
 #ignore build data and executables
 build/*
 dist/*
+bin/*

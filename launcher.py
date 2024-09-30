@@ -77,7 +77,7 @@ def check_for_updates(owner, repo):
 
 def launch_game():
     """Launch the game."""
-    subprocess.run(['python', GAME_EXECUTABLE])
+    subprocess.run([GAME_EXECUTABLE])
 
 
 if __name__ == '__main__':
