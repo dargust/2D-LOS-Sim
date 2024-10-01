@@ -240,14 +240,14 @@ class Drone(py.sprite.Sprite):
             self.position += self.velocity + 0.5 * self.acceleration
 
         if self.WRAP:
-            if self.position.x > WIDTH+20:
-                self.position.x = -10
-            elif self.position.x < -20:
-                self.position.x = WIDTH+10
-            if self.position.y > HEIGHT+20:
-                self.position.y = -10
-            elif self.position.y < -20:
-                self.position.y = HEIGHT-10
+            if self.position.x > WIDTH:
+                self.position.x = 0
+            elif self.position.x < 0:
+                self.position.x = WIDTH
+            if self.position.y > HEIGHT:
+                self.position.y = 0
+            elif self.position.y < 0:
+                self.position.y = HEIGHT
 
         if self.RESET:
             logger.debug("resetting from: {} at speed: {}".format(self.position, self.velocity))
@@ -316,6 +316,7 @@ if __name__ == '__main__':
 
     background = py.Surface((WORLDWIDTH,WORLDHEIGHT))
     camera = vector(0,0)
+    lock_camera = True
 
     ui_manager = pygui.UIManager(display)
     reset_button = pygui.elements.UIButton(relative_rect=py.Rect((10,10), (100,50)), text='Reset', manager=ui_manager)
@@ -325,6 +326,8 @@ if __name__ == '__main__':
     rcSuperFactor_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((310,10), (100,50)), initial_text='0.5', manager=ui_manager)
     rcExpo_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((410,10), (100,50)), initial_text='0.1', manager=ui_manager)
     update_rates_button = pygui.elements.UIButton(relative_rect=py.Rect((510,10), (100,50)), text='Update Rates', manager=ui_manager)
+
+    lock_camera_button = pygui.elements.UIButton(relative_rect=py.Rect((WIDTH-140,10), (130,50)), text='Unlock Camera', manager=ui_manager)
 
     allowed_chars = ["0","1","2","3","4","5","6","7","8","9","."]
     rcRate_input.set_allowed_characters(allowed_chars)
@@ -378,6 +381,9 @@ if __name__ == '__main__':
                     new_expo = float(rcExpo_input.get_text())
                     player_character.update_rates(new_rate, new_super, new_expo)
                     #logger.debug("UI Button Pressed")
+                elif event.ui_element == lock_camera_button:
+                    lock_camera = not lock_camera
+                    lock_camera_button.set_text("Unlock Camera" if lock_camera else "Lock Camera")
             elif event.type == pygui.UI_DROP_DOWN_MENU_CHANGED:
                 if event.ui_element == rates_type_selector:
                     player_character.set_rate_method(event.dict['text'])
@@ -411,7 +417,22 @@ if __name__ == '__main__':
             L_controller_dot.render(background)
             R_controller_dot.render(background)
         all_sprites.draw(background)
-        screen.blit(background, -camera/2+offset/2)
+        if lock_camera:
+            screen.blit(background)
+        else:
+            screen.blit(background, -camera+offset)
+
+            screen.blit(background, -camera+vector(offset.x,-offset.y)) #top
+            screen.blit(background, -camera+vector(offset.x,+offset.y*3)) #bottom
+
+            screen.blit(background, -camera+vector(-offset.x,offset.y)) #left
+            screen.blit(background, -camera+vector(+offset.x*3,offset.y)) #right
+
+            screen.blit(background, -camera+vector(-offset.x,-offset.y)) #top_left
+            screen.blit(background, -camera+vector(+offset.x*3,-offset.y)) #top_right
+
+            screen.blit(background, -camera+vector(-offset.x,offset.y*3)) #bottom_left
+            screen.blit(background, -camera+vector(+offset.x*3,offset.y*3)) #bottom_right
         ui_manager.draw_ui(screen)
         py.display.flip()
         ##RENDER
