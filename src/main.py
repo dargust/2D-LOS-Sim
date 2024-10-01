@@ -15,6 +15,9 @@ logger.debug("INIT")
 
 WIDTH = 1600
 HEIGHT = 900
+WORLDWIDTH = 1600
+WORLDHEIGHT = 900
+
 FPS = 60
 
 WHITE = (255,255,255)
@@ -311,6 +314,9 @@ if __name__ == '__main__':
 
     screen = py.display.set_mode(display)
 
+    background = py.Surface((WORLDWIDTH,WORLDHEIGHT))
+    camera = vector(0,0)
+
     ui_manager = pygui.UIManager(display)
     reset_button = pygui.elements.UIButton(relative_rect=py.Rect((10,10), (100,50)), text='Reset', manager=ui_manager)
     rates_item_list = ["Betaflight","Actual(Na)"]
@@ -393,16 +399,19 @@ if __name__ == '__main__':
         ##PHYSICS
 
         ##CAMERA
-
+        offset = vector(WIDTH/2,HEIGHT/2)
+        camera = player_character.position.copy()
         ##CAMERA
 
         ##RENDER
-        screen.fill((180,180,180))
-        player_character.render(screen)
+        screen.fill((255,255,255))
+        background.fill((180,180,180))
+        player_character.render(background)
         if controller:
-            L_controller_dot.render(screen)
-            R_controller_dot.render(screen)
-        all_sprites.draw(screen)
+            L_controller_dot.render(background)
+            R_controller_dot.render(background)
+        all_sprites.draw(background)
+        screen.blit(background, -camera/2+offset/2)
         ui_manager.draw_ui(screen)
         py.display.flip()
         ##RENDER
