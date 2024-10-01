@@ -1,4 +1,4 @@
-# 2D-LOS-Sim By Dan Argust 30/09/2024
+# 2D-LOS-Sim 2024
 pygame 2D LOS Simulator
 
 Can be run with keyboard using fixed rates.
