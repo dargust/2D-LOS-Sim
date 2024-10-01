@@ -21,6 +21,9 @@ WHITE = (255,255,255)
 BLACK = (0  ,0  ,0  )
 
 ##OBJECTS
+def collided(sprite, other):
+    return other.hitbox.colliderect(sprite.rect)
+
 class CollidableWall(py.sprite.Sprite):
     def __init__(self, x, y, width, height):
         py.sprite.Sprite.__init__(self)
@@ -30,6 +33,10 @@ class CollidableWall(py.sprite.Sprite):
         py.draw.rect(self.image, (0,0,0), (x,y,width,height))
         self.rect = self.image.get_rect()
         self.rect.center = (x,y)
+
+        self.hitbox = self.rect.inflate(25, 25)
+
+        #self.hitbox
         
     def update_position(self, x, y):
         pass
@@ -52,6 +59,8 @@ class Drone(py.sprite.Sprite):
         self.image = self.image_original_scaled.copy()
         self.rect = self.image.get_rect()
         self.rect.center = (x,y)
+
+        self.controller = controller
 
         self.rate_method = "Betaflight"
         
@@ -80,11 +89,14 @@ class Drone(py.sprite.Sprite):
         self.RC_RATE = 1.5
         self.RC_SUPER = 0.5
         self.RC_EXPO = 0.1
+        self.COLLISTION_DIVIDER = 5
+        self.HIGH_SPEED_COLLISION_GATE = 0
 
         # Flags
         self.MAX_FORCE = 0
         self.RESET = False
         self.STOPPED = False
+        self.WRAP = True
 
     def set_rate_method(self, method):
         self.rate_method = method
@@ -129,43 +141,45 @@ class Drone(py.sprite.Sprite):
     def reset(self):
         self.RESET = True
 
-    def quad_collision_check(self, n, collision_sprites):
+    def quad_collision_check(self, collision_sprites):
         """use n equidistant points between the previous position and new position"""
         start = self.pre_collision_position.copy()
         stop = self.position.copy()
         dir = start.angle_to(stop)
         mag = start.distance_to(stop)
-        quad_step = mag / n
-        unit_vector = vector(0,1)
+        quad_step = mag / self.COLLISTION_DIVIDER
+        unit_vector = vector(0.0,1.0)
         unit_vector.rotate_ip(dir)
         quad_step_vector = unit_vector * quad_step
         new_pos = self.pre_collision_position.copy()
-        for i in range(n):
+        for i in range(self.COLLISTION_DIVIDER):
             new_pos = new_pos + quad_step_vector
-            collided_sprites = py.sprite.spritecollide(self, collision_sprites, False)
+            collided_sprites = py.sprite.spritecollide(self, collision_sprites, False, collided)
             wall_collision_fudge = 1
-            high_speed = self.velocity.magnitude() > 2
-            resolution_speed = 0.7 if high_speed else 0
+            high_speed = self.velocity.magnitude() > self.HIGH_SPEED_COLLISION_GATE
+            resolution_speed = 0.4 if high_speed else 0
             if collided_sprites:
                 for sprite in collided_sprites:
-                    if sprite.rect.left - self.rect.width/2 < new_pos.x < sprite.rect.left + self.rect.width/2 and sprite.rect.bottom + wall_collision_fudge > new_pos.y > sprite.rect.top + wall_collision_fudge:
+                    self.mask = py.mask.from_surface(self.image)
+                    collision_point = py.sprite.collide_mask(self,sprite)
+                    if sprite.rect.left - self.rect.width/2 < new_pos.x < sprite.rect.left + self.rect.width/2 and self.velocity.x > 0 and sprite.rect.bottom + wall_collision_fudge > new_pos.y > sprite.rect.top + wall_collision_fudge and collision_point:
                         #if entering left wall
-                        new_pos.x = sprite.rect.left - self.rect.width / 2
+                        new_pos.x = sprite.rect.left - collision_point[0] / 2 #sprite.rect.left - self.rect.width / 2
                         self.velocity.x *= -resolution_speed
                         self.velocity.y *= 0.8
                         return new_pos
-                    elif sprite.rect.right + self.rect.width/2 > new_pos.x > sprite.rect.right - self.rect.width/2 and sprite.rect.bottom + wall_collision_fudge > new_pos.y > sprite.rect.top + wall_collision_fudge:
-                        #if entering left wall
-                        new_pos.x = sprite.rect.right + self.rect.width / 2
+                    elif sprite.rect.right + self.rect.width/2 > new_pos.x > sprite.rect.right - self.rect.width/2 and self.velocity.x < 0 and sprite.rect.bottom + wall_collision_fudge > new_pos.y > sprite.rect.top + wall_collision_fudge and collision_point:
+                        #if entering right wall
+                        new_pos.x = sprite.rect.right + collision_point[0] + self.mask.centroid()[0]#sprite.rect.right + self.rect.width / 2
                         self.velocity.x *= -resolution_speed
                         self.velocity.y *= 0.8
                         return new_pos
-                    elif sprite.rect.top - self.rect.height/2 < new_pos.y < sprite.rect.top + self.rect.height/2:
-                        new_pos.y = sprite.rect.top - self.rect.height / 2
+                    elif sprite.rect.top - self.rect.height/2 < new_pos.y < sprite.rect.top + self.rect.height/2 and self.velocity.y > 0 and collision_point:
+                        new_pos.y = sprite.rect.top - collision_point[1] / 2#sprite.rect.top - self.rect.height / 2
                         self.velocity.y *= -resolution_speed
                         self.velocity.x *= 0.8
                         return new_pos
-                    elif sprite.rect.bottom + self.rect.height/2 > new_pos.y > sprite.rect.bottom - self.rect.height/2:
+                    elif sprite.rect.bottom + self.rect.height/2 > new_pos.y > sprite.rect.bottom - self.rect.height/2 and self.velocity.y < 0 and collision_point:
                         new_pos.y = sprite.rect.bottom + self.rect.height / 2
                         self.velocity.y *= -resolution_speed
                         self.velocity.x *= 0.8
@@ -178,11 +192,11 @@ class Drone(py.sprite.Sprite):
             #print("hit")
             self.STOPPED = False
         self.previous_position = self.position.copy()
-        if controller:
-            Throttle = controller.get_axis(2)
-            Yaw = controller.get_axis(3)
-            Pitch = controller.get_axis(1)
-            raw_roll = controller.get_axis(0)
+        if self.controller:
+            Throttle = self.controller.get_axis(2)
+            Yaw = self.controller.get_axis(3)
+            Pitch = self.controller.get_axis(1)
+            raw_roll = self.controller.get_axis(0)
             if self.rate_method == "Betaflight":
                 Roll = self.applyBetaflightRates(raw_roll, abs(raw_roll)) * 6.6
             elif self.rate_method == "Actual":
@@ -214,7 +228,7 @@ class Drone(py.sprite.Sprite):
         self.angle += -Roll
         self.angle = self.angle % 360
 
-        self.position = self.quad_collision_check(10, collision_sprites)
+        self.position = self.quad_collision_check(collision_sprites)
 
         if not self.STOPPED:
             self.acceleration -= self.velocity * self.F_FRICTION
@@ -222,14 +236,15 @@ class Drone(py.sprite.Sprite):
             self.pre_collision_position = self.position.copy()
             self.position += self.velocity + 0.5 * self.acceleration
 
-        if self.position.x > WIDTH+20:
-            self.position.x = -10
-        elif self.position.x < -20:
-            self.position.x = WIDTH+10
-        if self.position.y > HEIGHT+20:
-            self.position.y = -10
-        elif self.position.y < -20:
-            self.position.y = HEIGHT-10
+        if self.WRAP:
+            if self.position.x > WIDTH+20:
+                self.position.x = -10
+            elif self.position.x < -20:
+                self.position.x = WIDTH+10
+            if self.position.y > HEIGHT+20:
+                self.position.y = -10
+            elif self.position.y < -20:
+                self.position.y = HEIGHT-10
 
         if self.RESET:
             logger.debug("resetting from: {} at speed: {}".format(self.position, self.velocity))
@@ -276,115 +291,121 @@ class StickDot(py.sprite.Sprite):
         py.draw.rect(screen, (0,0,0), (offset_x-10,offset_y-10, 220,220), 2)   
 ##OBJECT
 
-##INIT
-py.init()
-py.display.set_caption('2D LOS Sim')
+if __name__ == '__main__':
+    ##INIT
+    py.init()
+    py.display.set_caption('2D LOS Sim')
 
-py.joystick.init()
-joysticks = [py.joystick.Joystick(x) for x in range(py.joystick.get_count())]
-if joysticks:
-    controller = joysticks[0]
-    controller.init()
-else:
-    controller = None
+    py.joystick.init()
+    joysticks = [py.joystick.Joystick(x) for x in range(py.joystick.get_count())]
+    if joysticks:
+        controller = joysticks[0]
+        controller.init()
+    else:
+        controller = None
 
-all_sprites = py.sprite.Group()
-collision_sprites = py.sprite.Group()
+    all_sprites = py.sprite.Group()
+    collision_sprites = py.sprite.Group()
 
-display = (WIDTH,HEIGHT)
+    display = (WIDTH,HEIGHT)
 
-screen = py.display.set_mode(display)
+    screen = py.display.set_mode(display)
 
-ui_manager = pygui.UIManager(display)
-reset_button = pygui.elements.UIButton(relative_rect=py.Rect((10,10), (100,50)), text='Reset', manager=ui_manager)
-rates_item_list = ["Betaflight","Actual(Na)"]
-rates_type_selector = pygui.elements.UIDropDownMenu(relative_rect=py.Rect((110,10), (100,50)), options_list=rates_item_list, starting_option="Betaflight", expansion_height_limit=1000, manager=ui_manager)
-rcRate_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((210,10), (100,50)), initial_text='1.5', manager=ui_manager)
-rcSuperFactor_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((310,10), (100,50)), initial_text='0.5', manager=ui_manager)
-rcExpo_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((410,10), (100,50)), initial_text='0.1', manager=ui_manager)
-update_rates_button = pygui.elements.UIButton(relative_rect=py.Rect((510,10), (100,50)), text='Update Rates', manager=ui_manager)
+    ui_manager = pygui.UIManager(display)
+    reset_button = pygui.elements.UIButton(relative_rect=py.Rect((10,10), (100,50)), text='Reset', manager=ui_manager)
+    rates_item_list = ["Betaflight","Actual(Na)"]
+    rates_type_selector = pygui.elements.UIDropDownMenu(relative_rect=py.Rect((110,10), (100,50)), options_list=rates_item_list, starting_option="Betaflight", expansion_height_limit=1000, manager=ui_manager)
+    rcRate_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((210,10), (100,50)), initial_text='1.5', manager=ui_manager)
+    rcSuperFactor_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((310,10), (100,50)), initial_text='0.5', manager=ui_manager)
+    rcExpo_input = pygui.elements.UITextEntryLine(relative_rect=py.Rect((410,10), (100,50)), initial_text='0.1', manager=ui_manager)
+    update_rates_button = pygui.elements.UIButton(relative_rect=py.Rect((510,10), (100,50)), text='Update Rates', manager=ui_manager)
 
-allowed_chars = ["0","1","2","3","4","5","6","7","8","9","."]
-rcRate_input.set_allowed_characters(allowed_chars)
-rcSuperFactor_input.set_allowed_characters(allowed_chars)
-rcExpo_input.set_allowed_characters(allowed_chars)
+    allowed_chars = ["0","1","2","3","4","5","6","7","8","9","."]
+    rcRate_input.set_allowed_characters(allowed_chars)
+    rcSuperFactor_input.set_allowed_characters(allowed_chars)
+    rcExpo_input.set_allowed_characters(allowed_chars)
 
-clock = py.time.Clock()
+    clock = py.time.Clock()
 
-player_character = Drone(WIDTH/2,HEIGHT*0.75, controller)
-landing_platform = CollidableWall(WIDTH/2, HEIGHT*0.9, WIDTH*0.8, 35)
-#landing_platform2 = CollidableWall(WIDTH/2, HEIGHT*0.8+60, 80, 80)
-collision_sprites.add(landing_platform)
-#collision_sprites.add(landing_platform2)
+    player_character = Drone(WIDTH/2,HEIGHT*0.75, controller)
+    landing_platform = CollidableWall(WIDTH/2, HEIGHT*0.9, WIDTH*0.8, 35)
 
-if controller:
-    L_controller_dot = StickDot("Left")
-    R_controller_dot = StickDot("Right")
-    all_sprites.add(L_controller_dot)
-    all_sprites.add(R_controller_dot)
-all_sprites.add(player_character)
-all_sprites.add(landing_platform)
-#all_sprites.add(landing_platform2)
+    gate_1_L = CollidableWall(WIDTH-400, HEIGHT-400, 40, 40)
+    gate_1_R = CollidableWall(WIDTH-200, HEIGHT-400, 40, 40)
 
-done = False
-##INIT
+    collision_sprites.add(landing_platform)
+    collision_sprites.add(gate_1_L)
+    collision_sprites.add(gate_1_R)
 
-##GAMELOOP
-logger.debug("GAMELOOP")
-while(not done):
-    time_delta = clock.tick(FPS)/1000.0
-
-    ##EVENT HANDLER
-    for event in py.event.get():
-        if event.type == py.QUIT:
-            done = True
-        elif event.type == py.KEYUP:
-            #logger.debug(event.unicode)
-            if event.key == py.K_0:
-                player_character.reset()
-        elif event.type == pygui.UI_BUTTON_PRESSED:
-            if event.ui_element == reset_button:
-                player_character.reset()
-            elif event.ui_element == update_rates_button:
-                new_rate = float(rcRate_input.get_text())
-                new_super = float(rcSuperFactor_input.get_text())
-                new_expo = float(rcExpo_input.get_text())
-                player_character.update_rates(new_rate, new_super, new_expo)
-                #logger.debug("UI Button Pressed")
-        elif event.type == pygui.UI_DROP_DOWN_MENU_CHANGED:
-            if event.ui_element == rates_type_selector:
-                player_character.set_rate_method(event.dict['text'])
-        ui_manager.process_events(event)
-
-    ui_manager.update(time_delta)
-    ##EVENT HANDLER
-
-    ##CONTROL POLL
-    keys = py.key.get_pressed()
-    ##CONTROL POLL
-
-    ##PHYSICS
-    player_character.update_position(keys, collision_sprites)
     if controller:
-        L_controller_dot.update_position(controller)
-        R_controller_dot.update_position(controller)
-    all_sprites.update()
-    ##PHYSICS
+        L_controller_dot = StickDot("Left")
+        R_controller_dot = StickDot("Right")
+        all_sprites.add(L_controller_dot)
+        all_sprites.add(R_controller_dot)
+    all_sprites.add(player_character)
+    all_sprites.add(landing_platform)
+    all_sprites.add(gate_1_L)
+    all_sprites.add(gate_1_R)
 
-    ##CAMERA
+    done = False
+    ##INIT
 
-    ##CAMERA
+    ##GAMELOOP
+    logger.debug("GAMELOOP")
+    while(not done):
+        time_delta = clock.tick(FPS)/1000.0
 
-    ##RENDER
-    screen.fill((180,180,180))
-    player_character.render(screen)
-    if controller:
-        L_controller_dot.render(screen)
-        R_controller_dot.render(screen)
-    all_sprites.draw(screen)
-    ui_manager.draw_ui(screen)
-    py.display.flip()
-    ##RENDER
+        ##EVENT HANDLER
+        for event in py.event.get():
+            if event.type == py.QUIT:
+                done = True
+            elif event.type == py.KEYUP:
+                #logger.debug(event.unicode)
+                if event.key == py.K_0:
+                    player_character.reset()
+            elif event.type == pygui.UI_BUTTON_PRESSED:
+                if event.ui_element == reset_button:
+                    player_character.reset()
+                elif event.ui_element == update_rates_button:
+                    new_rate = float(rcRate_input.get_text())
+                    new_super = float(rcSuperFactor_input.get_text())
+                    new_expo = float(rcExpo_input.get_text())
+                    player_character.update_rates(new_rate, new_super, new_expo)
+                    #logger.debug("UI Button Pressed")
+            elif event.type == pygui.UI_DROP_DOWN_MENU_CHANGED:
+                if event.ui_element == rates_type_selector:
+                    player_character.set_rate_method(event.dict['text'])
+            ui_manager.process_events(event)
 
-logger.debug("QUITTING")
-py.quit()
+        ui_manager.update(time_delta)
+        ##EVENT HANDLER
+
+        ##CONTROL POLL
+        keys = py.key.get_pressed()
+        ##CONTROL POLL
+
+        ##PHYSICS
+        player_character.update_position(keys, collision_sprites)
+        if controller:
+            L_controller_dot.update_position(controller)
+            R_controller_dot.update_position(controller)
+        all_sprites.update()
+        ##PHYSICS
+
+        ##CAMERA
+
+        ##CAMERA
+
+        ##RENDER
+        screen.fill((180,180,180))
+        player_character.render(screen)
+        if controller:
+            L_controller_dot.render(screen)
+            R_controller_dot.render(screen)
+        all_sprites.draw(screen)
+        ui_manager.draw_ui(screen)
+        py.display.flip()
+        ##RENDER
+
+    logger.debug("QUITTING")
+    py.quit()
